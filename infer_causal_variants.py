@@ -55,21 +55,29 @@ if __name__=="__main__":
 
     # load data
     test_statistics = preprocess.load_test_statistics(options.test_stat_file)
+    print "loaded test statistics ..."
     genomic_annotations = preprocess.load_genomic_annotations(options.annot_file)
+    print "loaded genomic annotations..."
     variant_annotations = preprocess.match_annotations_to_variants(test_statistics, genomic_annotations)
-    pdb.set_trace()
+    print "preprocessed data ..."
+    all_labels = np.array([v for val in variant_annotations.values() for v in val]).astype(np.str)
+    uniq_labels = np.unique(all_labels).astype(np.str)
+    annot_labels = [label for label in uniq_labels if np.sum(all_labels==label)>=100]
 
     # learn model
-    data, posteriors, annotation = bhmodel.learn_and_infer(test_statistics, variant_annotations, options.prior_var, options.reltol)
+    data, posteriors, annotation = bhmodel.learn_and_infer(test_statistics, variant_annotations, options.prior_var, options.mintol)
     annot = [annotation.annot_labels, annotation.weights, annotation.stderr]
 
     # get per-gene and per-variant posteriors
     for datum,posterior in zip(data,posteriors):
-        for snp,pos in zip(datum.snps,posterior.snp):
-            rawdata[datum.name][snp] = np.hstack((rawdata[datum.name][snp],[pos,posterior.gene]))
+        logBFmax = np.max(datum.logBF)
+        prior = np.exp(datum.logBF-logBFmax)/np.sum(np.exp(datum.logBF-logBFmax))
+        for snp,pri,pos in zip(datum.snps,prior,posterior.snp):
+            test_statistics[datum.name][snp] = np.hstack((test_statistics[datum.name][snp],[pri,pos,posterior.gene]))
 
     # save data and results
-    handle = open(option.output_file, 'w')
+    handle = open(options.output_file, 'w')
     cPickle.Pickler(handle,protocol=2).dump(annot)
-    cPickle.Pickler(handle,protocol=2).dump(rawdata)
+    cPickle.Pickler(handle,protocol=2).dump(test_statistics)
+    cPickle.Pickler(handle,protocol=2).dump(variant_annotations)
     handle.close()

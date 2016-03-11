@@ -72,6 +72,7 @@ def match_annotations_to_variants(test_statistics, genomic_annotations):
                 variant_annotations[variant]
             except KeyError:
                 variant_annotations[variant] = [label for label,values in genomic_annotations.iteritems() 
-                                                if np.any(np.logical_and(values[chrom][:,0]<=position,values[chrom][:,1]>position))]
+                                                if values.has_key(chrom) and 
+                                                np.any(np.logical_and(values[chrom][:,0]<=position,values[chrom][:,1]>position))]
 
     return variant_annotations                

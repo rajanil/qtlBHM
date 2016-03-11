@@ -19,8 +19,8 @@ cdef class Datum:
         self.name = gene
         self.snps = associations.keys()
         self.V = len(self.snps)
-        beta = np.array([associations[key][1] for key in self.snps])
-        stderr = np.array([associations[key][2] for key in self.snps])
+        beta = np.array([associations[key][0] for key in self.snps])
+        stderr = np.array([associations[key][1] for key in self.snps])
         self.logBF = np.empty((self.V,), dtype=np.float64)
         self.compute_bayes_factors(beta, stderr, prior_var)
 
@@ -104,8 +104,12 @@ cdef class Annotation:
         self.log_prior_odds = random.random()
         self.log_prior_odds = log(self.log_prior_odds/(1-self.log_prior_odds))
 
-        annot_labels = list(set([v for val in annot_values.values() for v in val]))
+        # only select annotations that cover a minimum number of variants (100)
+        all_labels = [v for val in annot_values.values() for v in val]
+        uniq_labels = list(set(all_labels))
+        annot_labels = [label for label in uniq_labels if np.sum([l==label for l in all_labels])>=100]
         annot_labels.sort()
+
         self.N = len(annot_labels)
         self.weights = np.zeros((self.N,),dtype=float)
         self.stderr = np.zeros((self.N,),dtype=float)
@@ -113,15 +117,11 @@ cdef class Annotation:
 
         self.annotvalues = dict()
         for snp,val in annot_values.iteritems():
-            self.annotvalues[snp] = [self.annot_labels[v] for v in val]
+            self.annotvalues[snp] = [self.annot_labels[v] for v in val 
+                                     if self.annot_labels.has_key(v)]
             self.annotvalues[snp].sort()
 
     def update(self, list data, list posteriors):
-
-        # select subset of genes to update weights
-        #subset = [(d,p) for d,p in zip(data,posteriors) if random.random()<0.1]
-        #data = [s[0] for s in subset]
-        #posteriors = [s[1] for s in subset]
 
         # run solver
         x_init = self.weights.reshape(self.N,1)
