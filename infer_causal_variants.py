@@ -55,6 +55,40 @@ def parse_args():
 
     return options
 
+def compute_posterior_enrichment(annotation, test_statistics, variant_annotation):
+
+    prior_total = 0
+    annot_prior = dict()
+    pos_total = 0
+    annot_posterior = dict()
+    towrite = []
+    for gene,value in test_statistics.iteritems():
+        snps = value.keys()
+        prior = np.array([value[snp][2] for snp in snps])
+        prior_argmax = np.argmax(prior)
+        prior_snp = snps[prior_argmax]
+        for a in variant_annotation[prior_snp]:
+            try:
+                annot_prior[a] += value[prior_snp][2]*0.5
+            except KeyError:
+                annot_prior[a] = value[prior_snp][2]*0.5
+            prior_total += value[prior_snp][2]*0.5
+        posterior = np.array([value[snp][3] for snp in snps])
+        pos_argmax = np.argmax(posterior)
+        pos_snp = snps[pos_argmax]
+        for a in variant_annotation[pos_snp]:
+            try:
+                annot_posterior[a] += value[pos_snp][3]*value[pos_snp][4]
+            except KeyError:
+                annot_posterior[a] = value[pos_snp][3]*value[pos_snp][4]
+            pos_total += value[pos_snp][3]*value[pos_snp][4]
+
+    labels = list(set(annot_prior.keys()).union(set(annot_posterior.keys())))
+    pre_proportion = np.array([annot_prior[label] if annot_prior.has_key(label) else 0 for label in labels])/prior_total
+    post_proportion = np.array([annot_posterior[label] if annot_posterior.has_key(label) else 0 for label in labels])/pos_total
+
+    return pre_proportion, post_proportion, labels
+
 if __name__=="__main__":
 
     options = parse_args()
@@ -69,18 +103,35 @@ if __name__=="__main__":
 
     # learn model
     data, posteriors, annotation = bhmodel.learn_and_infer(test_statistics, variant_annotations, options.prior_var, options.mintol)
-    annot = [annotation.annot_labels, annotation.weights, annotation.stderr]
 
-    # get per-gene and per-variant posteriors
+    # compute posterior enrichment
+    preproportion, postproportion = compute_proportions(genomic_annotations, test_statistics, variant_annotations)
+
+    # output annotation weights and standard errors,
+    # along with their posterior enrichments
+    annot_output_file = '%s_annotations.txt'%options.output_prefix
+    handle = open(annot_output_file, 'w')
+    handle.write("Annotation\tWeight\tStderr\tPosteriorEnrichment(woAnnotation)\tPosteriorEnrichment(withAnnotation)\n")
+    for label,weight,stderr,pre,post in zip(annotation.annot_labels,annotation.weights,annotation.stderr,preproportion,postproportion):
+        handle.write("%s\t%.8f\t%.8f\t%.8f\t%.8f\n"%(label,weight,stderr,pre,post))
+    handle.close()
+
+    # output per-locus QTL posterior
+    locus_posterior_file = '%s_perlocus_posterior.txt.gz'%options.output_prefix
+    handle = gzip.open(locus_posterior_file,'w')
+    handle.write("Locus\tPosterior\n")
+    for datum,posterior in zip(data,posteriors):
+        handle.write("%s\t%.8f\n"%(datum.name,posterior.gene))
+    handle.close()
+
+    # output per-variant posterior of being the causal variant
+    # with and without annotation information
+    variant_posterior_file = '%s_pervariant_posterior.txt.gz'%options.output_prefix
+    handle = gzip.open(variant_posterior_file, 'w')
+    handle.write("Locus\tVariant\tPosterior(woAnnotation)\tPosterior(withAnnotation)\n")
     for datum,posterior in zip(data,posteriors):
         logBFmax = np.max(datum.logBF)
         prior = np.exp(datum.logBF-logBFmax)/np.sum(np.exp(datum.logBF-logBFmax))
         for snp,pri,pos in zip(datum.snps,prior,posterior.snp):
-            test_statistics[datum.name][snp] = np.hstack((test_statistics[datum.name][snp],[pri,pos,posterior.gene]))
-
-    # save data and results
-    handle = open(options.output_file, 'w')
-    cPickle.Pickler(handle,protocol=2).dump(annot)
-    cPickle.Pickler(handle,protocol=2).dump(test_statistics)
-    cPickle.Pickler(handle,protocol=2).dump(variant_annotations)
+            handle.write("%s\t%s\t%.8f\t%.8f\n"%(datum.name, snp, pri, pos))
     handle.close()
