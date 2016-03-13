@@ -54,6 +54,66 @@ the following way, before it can be executed.
     python setup.py build_ext --inplace
 
 This step will generate a number of warning messages that can be ignored. If there are no 
-error messages, the compilation step should produce two files bhmodel.c and bhmodel.so.
+error messages, the compilation step should produce three files: 
+bhmodel.c, bhmodel.h and bhmodel.so.
 
+## Executing the code
 
+The script you will need to execute is `infer_causal_variants.py`. To see command-line
+options that need to be passed to the script, you can do the following:
+
+    $ python infer_causal_variants.py
+
+    runs qtlBHM, to infer causal variants driving molecular quantitative trait loci
+    and identifies functional elements underlying these causal variants.
+    qtlBHM requires summary statistics of association tests between the molecular phenotype
+    for each locus and the genotypes of cis-variants, along with functional annotations 
+    underlying each variant being tested.
+
+    positional arguments:
+      test_stat_file        gzipped text file containing summary statistics of
+                            association tests between the molecular phenotypes of
+                            a number of genetic loci and the genotype of variants
+                            segregating in the sample. columns of the file should be
+                            as follows: Locus_ID Variant Effect_size Standard_error
+                            Variants should be specified as Chromosome.Position
+                            (E.g., chr12.472368)
+      annot_files           whitespace separated list of gzipped bed files 
+                            containing genomic or variant annotations
+
+    optional arguments:
+      -h, --help            show this help message and exit
+      --output_file OUTPUT_FILE
+                            file to store the model parameters and per-variant 
+                            and per-locus posteriors
+      --prior_var PRIOR_VAR prior variance of effect sizes of the causal
+                            variants (default: 1.)
+      --mintol MINTOL       convergence criterion for change in per-locus marginal
+                            likelihood (default: 1e-6)
+      --log_file LOG_FILE   file to store some statistics of the optimization algorithm
+
+We will now describe in detail how to use this software using an example dataset of expression QTLs identified in human lymphoblatoid cell lines (LCLs), and chromHMM annotations for tested variants. The test statistics and annotation are provided in `test/`.
+
+### Key Inputs
+
+The key inputs that need to be passed to this script are
++   the gzipped file containing the test statistics (effect sizes and standard errors)
++   the gzipped file(s) containing genomic and/or variant annotations
+
+    *Note: these inputs are positional arguments and the files must be specified in the correct order (as shown above).*
+
+The gzipped file of test statistics should have the following format.
+
+    Locus   Variant     EffectSize  StandardError
+
+The gzipped annotation file should have the following format.
+
+    Chromosome  Start   End     AnnotationLabel
+
+In the above formats, positions can be 0-based or 1-based, as long as they are both the same.
+
+### Learning and Inference
+
+Learning and inference can be performed by passing the following arguments.
+
+    python infer_causal_variants.py --output_file test/results.pkl --log_file test/run.log test/statistics.txt.gz test/annotations.bed.gz

@@ -27,12 +27,17 @@ def parse_args():
     parser.add_argument("--prior_var",
                         type=float,
                         default=1,
-                        help="prior variance on effect sizes (default: 1)")
+                        help="prior variance of effect sizes of causal variants (default: 1)")
 
     parser.add_argument("--output_file",
                         type=str,
                         default=None,
-                        help="file to store the model parameters and per-variant posteriors")
+                        help="file to store the model parameters and per-variant and per-locus posteriors")
+
+    parser.add_argument("--log_file",
+                        type=str,
+                        default=None,
+                        help="file to store some statistics of the optimization algorithm")
 
     parser.add_argument("test_stat_file",
                         action="store",
