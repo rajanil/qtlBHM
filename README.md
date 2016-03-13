@@ -92,7 +92,7 @@ options that need to be passed to the script, you can do the following:
                             likelihood (default: 1e-6)
       --log_file LOG_FILE   file to store some statistics of the optimization algorithm
 
-We will now describe in detail how to use this software using an example dataset of expression QTLs identified in human lymphoblatoid cell lines (LCLs), and chromHMM annotations for tested variants. The test statistics and annotation are provided in `test/`.
+We will now describe in detail how to use this software using an example dataset of expression QTLs identified in human lymphoblastoid cell lines (LCLs), and chromHMM annotations for the tested variants. The test statistics and annotations are provided in `test/`.
 
 ### Key Inputs
 
@@ -102,18 +102,24 @@ The key inputs that need to be passed to this script are
 
     *Note: these inputs are positional arguments and the files must be specified in the correct order (as shown above).*
 
-The gzipped file of test statistics should have the following format.
+The gzipped file of test statistics should have the following format 
+(see `test/statistics.txt.gz` for an example; the header should not be included in the file).
 
-    Locus   Variant     EffectSize  StandardError
+    Locus               Variant         EffectSize  StandardError
+    ENSG00000183020.9   chr22.19910762  0.00182715  0.142038689611108
+    ENSG00000110344.5   chr22.45258495  -0.675393   0.226839423859863
 
-The gzipped annotation file should have the following format.
+The gzipped annotation file should have the following format (the header should not be included in the file).
+(see `test/annotation.bed.gz` for an example; the header should not be included in the file).
 
-    Chromosome  Start   End     AnnotationLabel
+    Chromosome  Start   End         AnnotationLabel
+    chr22   51221735    51223534    Active_promoter_LCL
+    chr22   17639200    17639399    Weak_promoter_LCL
 
 In the above formats, positions can be 0-based or 1-based, as long as they are both the same.
 
 ### Learning and Inference
 
-Learning and inference can be performed by passing the following arguments.
+Learning and inference can be performed by passing the following arguments (using test data as examples).
 
     python infer_causal_variants.py --output_file test/results.pkl --log_file test/run.log test/statistics.txt.gz test/annotations.bed.gz
