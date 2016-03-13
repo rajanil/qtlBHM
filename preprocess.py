@@ -1,5 +1,6 @@
 import gzip
 import pdb
+import time
 
 import numpy as np
 
@@ -25,31 +26,33 @@ def load_test_statistics(filename):
 
     return teststats
 
-def load_genomic_annotations(filename):
+def load_genomic_annotations(filenames):
 
     annotations = dict()
 
-    # open file
-    if filename.lower().endswith(('.gz','.zip')):
-        handle = gzip.open(filename, 'r')
-    else:
-        handle = open(filename, 'r')
+    for filename in filenames:
 
-    # read in annotation coordinates and labels
-    for line in handle:
-        row = line.strip().split()
-        # check if annotation exists in dictionary
-        try:
-            annotations[row[3]]
-        except KeyError:
-            annotations[row[3]] = dict()
-        # add entry
-        try:
-            annotations[row[3]][row[0]].append([int(row[1]), int(row[2])])
-        except KeyError:
-            annotations[row[3]][row[0]] = [[int(row[1]), int(row[2])]]
+        # open file
+        if filename.lower().endswith(('.gz','.zip')):
+            handle = gzip.open(filename, 'r')
+        else:
+            handle = open(filename, 'r')
 
-    handle.close()
+        # read in annotation coordinates and labels
+        for line in handle:
+            row = line.strip().split()
+            # check if annotation exists in dictionary
+            try:
+                annotations[row[3]]
+            except KeyError:
+                annotations[row[3]] = dict()
+            # add entry
+            try:
+                annotations[row[3]][row[0]].append([int(row[1]), int(row[2])])
+            except KeyError:
+                annotations[row[3]][row[0]] = [[int(row[1]), int(row[2])]]
+
+        handle.close()
 
     # order annotations by location
     for label in annotations.keys():
@@ -62,17 +65,31 @@ def load_genomic_annotations(filename):
 
 def match_annotations_to_variants(test_statistics, genomic_annotations):
 
-    variant_annotations = dict()
+    # get all variants
+    variants = dict()
     for locus,stats in test_statistics.iteritems():
         for variant,varstat in stats.iteritems():
             chrom, position = variant.split('.')
             position = int(position)
-
             try:
-                variant_annotations[variant]
+                variants[chrom].append(position)
             except KeyError:
-                variant_annotations[variant] = [label for label,values in genomic_annotations.iteritems() 
-                                                if values.has_key(chrom) and 
-                                                np.any(np.logical_and(values[chrom][:,0]<=position,values[chrom][:,1]>position))]
+                variants[chrom] = [position]
 
-    return variant_annotations                
+    # initialize annotation dictionary
+    variant_annotations = dict()
+    for chrom in variants.keys():
+        variants[chrom] = np.unique(variants[chrom])
+        variant_annotations.update(dict([('%s.%d'%(chrom,pos),[]) for pos in variants[chrom]]))
+
+    for label,values in genomic_annotations.iteritems():
+        for chrom in values.keys():
+            try:
+                mask = np.array([np.any(np.logical_and(position>=values[chrom][:,0],position<values[chrom][:,1])) 
+                                 for position in variants[chrom]])
+                vars = ['%s.%d'%(chrom,pos) for pos in variants[chrom][mask]]
+                ig = [variant_annotations[var].append(label) for var in vars]
+            except KeyError:
+                pass
+
+    return variant_annotations

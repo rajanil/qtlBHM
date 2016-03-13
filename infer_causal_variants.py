@@ -38,9 +38,10 @@ def parse_args():
                         action="store",
                         help="file containing the test statistics")
 
-    parser.add_argument("annot_file",
+    parser.add_argument("annot_files",
                         action="store",
-                        help="file containing the genomic annotations")
+                        nargs="+",
+                        help="names of files containing the genomic and variant annotations")
 
     options = parser.parse_args()
 
@@ -56,13 +57,10 @@ if __name__=="__main__":
     # load data
     test_statistics = preprocess.load_test_statistics(options.test_stat_file)
     print "loaded test statistics ..."
-    genomic_annotations = preprocess.load_genomic_annotations(options.annot_file)
+    genomic_annotations = preprocess.load_genomic_annotations(options.annot_files)
     print "loaded genomic annotations..."
     variant_annotations = preprocess.match_annotations_to_variants(test_statistics, genomic_annotations)
     print "preprocessed data ..."
-    all_labels = np.array([v for val in variant_annotations.values() for v in val]).astype(np.str)
-    uniq_labels = np.unique(all_labels).astype(np.str)
-    annot_labels = [label for label in uniq_labels if np.sum(all_labels==label)>=100]
 
     # learn model
     data, posteriors, annotation = bhmodel.learn_and_infer(test_statistics, variant_annotations, options.prior_var, options.mintol)

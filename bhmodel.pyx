@@ -107,7 +107,7 @@ cdef class Annotation:
         # only select annotations that cover a minimum number of variants (100)
         all_labels = [v for val in annot_values.values() for v in val]
         uniq_labels = list(set(all_labels))
-        annot_labels = [label for label in uniq_labels if np.sum([l==label for l in all_labels])>=100]
+        annot_labels = [label for label in uniq_labels if np.sum([l==label for l in all_labels])>=10]
         annot_labels.sort()
 
         self.N = len(annot_labels)
