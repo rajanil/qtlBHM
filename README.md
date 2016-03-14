@@ -124,6 +124,6 @@ Learning and inference can be performed by passing the following arguments (usin
     python infer_causal_variants.py --output_prefix test/results test/statistics.txt.gz test/annotations.bed.gz
 
 This run will output three files: 
-  1. `test/results_locus_posterior.txt.gz` -- this file lists the posterior probability that each tested locus is a QTL
-  2. `test/results_variant_posterior.txt.gz` -- this file lists the posterior probability that each variant is the causal variant for a specific locus
-  3. `test/results_annotations.txt` -- this file lists the weights and standard errors for each annotation, and the posterior enrichment for each annotation
+  1. `test/results_locus_posterior.txt.gz` -- this file lists the probability that each tested locus is a QTL
+  2. `test/results_variant_posterior.txt.gz` -- this file lists the probability that each variant is the causal variant for a specific locus.A probability is computed with and without prior weighting of variants using annotations.
+  3. `test/results_annotations.txt` -- this file lists the weights and standard errors for each annotation, and the posterior enrichment for each annotation. A posterior enrichment is computed with and without prior weighting of variants using annotations.
