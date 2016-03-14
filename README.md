@@ -83,9 +83,8 @@ options that need to be passed to the script, you can do the following:
 
     optional arguments:
       -h, --help            show this help message and exit
-      --output_file OUTPUT_FILE
-                            file to store the model parameters and per-variant 
-                            and per-locus posteriors
+      --output_prefix OUTPUT_PREFIX
+                            prefix for the output files
       --prior_var PRIOR_VAR prior variance of effect sizes of the causal
                             variants (default: 1.)
       --mintol MINTOL       convergence criterion for change in per-locus marginal
@@ -116,10 +115,15 @@ The gzipped annotation file should have the following format (the header should 
     chr22   51221735    51223534    Active_promoter_LCL
     chr22   17639200    17639399    Weak_promoter_LCL
 
-In the above formats, positions can be 0-based or 1-based, as long as they are both the same.
+In the above formats, positions can be 0-based or 1-based, as long as they are the same in both files.
 
 ### Learning and Inference
 
 Learning and inference can be performed by passing the following arguments (using test data as examples).
 
-    python infer_causal_variants.py --output_file test/results.pkl --log_file test/run.log test/statistics.txt.gz test/annotations.bed.gz
+    python infer_causal_variants.py --output_prefix test/results test/statistics.txt.gz test/annotations.bed.gz
+
+This run will output three files: 
+  1. `test/results_locus_posterior.txt.gz` -- this file lists the posterior probability that each tested locus is a QTL
+  2. `test/results_variant_posterior.txt.gz` -- this file lists the posterior probability that each variant is the causal variant for a specific locus
+  3. `test/results_annotations.txt` -- this file lists the weights and standard errors for each annotation, and the posterior enrichment for each annotation
