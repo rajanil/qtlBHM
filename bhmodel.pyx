@@ -4,11 +4,13 @@ from math import log, exp
 import random
 import cvxopt as cvx
 from cvxopt import solvers
-import time
+import datetime
 import pdb
 
 solvers.options['maxiters'] = 20
 solvers.options['show_progress'] = False
+
+time = lambda: datetime.datetime.strftime(datetime.datetime.now(), '%Y-%m-%d %H:%M:%S')
 
 cdef class Datum:
 
@@ -107,7 +109,7 @@ cdef class Annotation:
         # only select annotations that cover a minimum number of variants (100)
         all_labels = [v for val in annot_values.values() for v in val]
         uniq_labels = list(set(all_labels))
-        annot_labels = [label for label in uniq_labels if np.sum([l==label for l in all_labels])>=10]
+        annot_labels = [label for label in uniq_labels if np.sum([l==label for l in all_labels])>=100]
         annot_labels.sort()
 
         self.N = len(annot_labels)
@@ -328,36 +330,26 @@ def learn_and_infer(dataQTL, snp_annotation, prior_var, reltol):
     for datum,posterior in zip(data,posteriors):
         posterior.update(datum, annotation)
     L = likelihood(data, posteriors, annotation)
-    print "%d genes"%len(data)
-    print "%d variants"%(len(annotation.annotvalues))
-    print "%d annotations"%annotation.N
-    print "Initial likelihood = %.3e"%L
+    print "%s\t%d genes; %d variants; %d annotations"%(time(),len(data),len(annotation.annotvalues),annotation.N)
+    print "%s\tInitial likelihood = %.6e"%(time(), L)
     dL = np.inf
 
     # infer causal variants
     while np.abs(dL)>reltol:
 
-        starttime = time.time()
-
         # update posterior
-        starttime = time.time()
         for datum,posterior in zip(data,posteriors):
             posterior.update(datum, annotation)
-        print "updated posteriors in %.2f secs"%(time.time()-starttime)
 
         # update parameters
-        starttime = time.time()
         annotation.update(data, posteriors)
-        print "updated parameters in %.2f secs"%(time.time()-starttime)
 
         # compute likelihood
-        starttime = time.time()
         newL = likelihood(data, posteriors, annotation)
-        print "computed likelihood in %.2f secs"%(time.time()-starttime)
 
         dL = (newL-L)/np.abs(L)
         L = newL
-        print "Likelihood = %.3e"%L, "Relative change = %.3e"%dL
+        print "%s\tLikelihood = %.6e; Relative change = %.6e"%(time(),L,dL)
 
     annotation.compute_stderr(data, posteriors)
     return data, posteriors, annotation
