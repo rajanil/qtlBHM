@@ -1,16 +1,8 @@
-import random
-import cPickle
-import gzip
 import sys
 import pdb
-import os
 
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plot
-
-import preprocess
 
 def plot_annotation_weights(weights, stderrs, labels):
 
@@ -84,7 +76,7 @@ def plot_annotation_proportion(preprop, postprop, labels):
     subplot.yaxis.set_ticks([])
     subplot.xaxis.set_ticks_position('bottom')
 
-    order = np.argsort(postprop-preprop)
+    order = np.argsort(postprop)
     if order.size>20:
         order = np.hstack((order[:10],order[-10:]))
     preprop = preprop[order]
@@ -132,93 +124,33 @@ def plot_annotation_proportion(preprop, postprop, labels):
 
     return figure
 
-def compute_proportions(filename):
+def get_annotation_weights_proportions(filename):
 
     handle = open(filename, 'r')
-    annot = cPickle.load(handle)
-    test_statistics = cPickle.load(handle)
-    variant_annotation = cPickle.load(handle)
+    header = handle.next().strip().split()
+    data = [line.strip().split() for line in handle]
     handle.close()
+    labels = [dat[0] for dat in data]
+    weight = np.array([dat[1] for dat in data]).astype('float')
+    stderr = np.array([dat[2] for dat in data]).astype('float')
+    preprop = np.array([dat[3] for dat in data]).astype('float')
+    postprop = np.array([dat[4] for dat in data]).astype('float')
 
-    prior_total = 0
-    annot_prior = dict()
-    pos_total = 0
-    annot_posterior = dict()
-    towrite = []
-    for gene,value in test_statistics.iteritems():
-        snps = value.keys()
-        prior = np.array([value[snp][2] for snp in snps])
-        prior_argmax = np.argmax(prior)
-        prior_snp = snps[prior_argmax]
-        for a in variant_annotation[prior_snp]:
-            try:
-                annot_prior[a] += value[prior_snp][2]*0.5
-            except KeyError:
-                annot_prior[a] = value[prior_snp][2]*0.5
-            prior_total += value[prior_snp][2]*0.5
-        posterior = np.array([value[snp][3] for snp in snps])
-        pos_argmax = np.argmax(posterior)
-        pos_snp = snps[pos_argmax]
-        for a in variant_annotation[pos_snp]:
-            try:
-                annot_posterior[a] += value[pos_snp][3]*value[pos_snp][4]
-            except KeyError:
-                annot_posterior[a] = value[pos_snp][3]*value[pos_snp][4]
-            pos_total += value[pos_snp][3]*value[pos_snp][4]
-        towrite.append('%s\t%s\t%s\t%.6f'%(gene,','.join(snps),','.join(['%.6f'%value[snp][3] for snp in snps]),value[pos_snp][4]))
-
-    labels = list(set(annot_prior.keys()).union(set(annot_posterior.keys())))
-    pre_proportion = np.array([annot_prior[label] if annot_prior.has_key(label) else 0 for label in labels])/prior_total
-    post_proportion = np.array([annot_posterior[label] if annot_posterior.has_key(label) else 0 for label in labels])/pos_total
-
-    return pre_proportion, post_proportion, labels, towrite
-
-def compute_weights(filename):
-
-    handle = open(filename, 'r')
-    annot = cPickle.load(handle)
-    handle.close()
-    weight = annot[1]
-    stderr = annot[2]
-
-    N = len(annot[0])
-    annotdict = dict([(val,key) for key,val in annot[0].iteritems()])
-    labels = [annotdict[i] for i in xrange(N)]
-
-    return weight, stderr, labels
+    return weight, stderr, preprop, postprop, labels
 
 if __name__=="__main__":
 
-    results_file = sys.argv[1]
-    basename = os.path.splitext(results_file)[0]
+    results_prefix = sys.argv[1]
 
     # get annotation weights    
-    weight, stderr, labels = compute_weights(results_file)
+    weight, stderr, preprop, postprop, labels = get_annotation_weights_proportions(results_prefix+"_annotations.txt")
 
     # plot annotation weights
     figure = plot_annotation_weights(weight, stderr, labels)
-    annot_fig_file = '%s_annotation_weights.pdf'%basename
+    annot_fig_file = '%s_annotation_weights.pdf'%results_prefix
     figure.savefig(annot_fig_file, dpi=450)
-
-    # write annotation weights
-    weights_file = '%s_annotation_weights.txt'%basename
-    handle = open(weights_file, 'w')
-    handle.write("annotation\tweight\tstderr\n")
-    for w,s,l in zip(weight,stderr,labels):
-        handle.write("%s\t%.6f\t%.6f\n"%(l,w,s))
-    handle.close()
-
-    # compute proportions of QTLs in each annotation
-    preprop, postprop, labels, towrite = compute_proportions(results_file)
-
-    # write proportions
-    proportion_file = '%s_probabilities.txt.gz'%basename
-    handle = gzip.open(proportion_file, 'w')
-    handle.write("locus\tsnps(comma-sep)\tsnp_posteriors(comma-sep)\tlocus_posterior\n")
-    handle.write('\n'.join(towrite))
-    handle.close()
 
     # plot proportions
     figure = plot_annotation_proportion(preprop, postprop, labels)
-    prop_fig_file = '%s_annotation_proportions.pdf'%basename
+    prop_fig_file = '%s_annotation_proportions.pdf'%results_prefix
     figure.savefig(prop_fig_file, dpi=450)

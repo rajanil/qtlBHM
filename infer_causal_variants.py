@@ -63,29 +63,27 @@ def compute_posterior_enrichment(test_statistics, variant_annotation):
 
     annot_prior = dict()
     annot_posterior = dict()
+    prior_total = 0
+    posterior_total = 0
     for gene,value in test_statistics.iteritems():
         snps = value.keys()
-        prior = np.array([value[snp][2] for snp in snps])
-        prior_argmax = np.argmax(prior)
-        prior_snp = snps[prior_argmax]
-        for a in variant_annotation[prior_snp]:
-            try:
-                annot_prior[a] += value[prior_snp][2]*0.5
-            except KeyError:
-                annot_prior[a] = value[prior_snp][2]*0.5
-        posterior = np.array([value[snp][3] for snp in snps])
-        pos_argmax = np.argmax(posterior)
-        pos_snp = snps[pos_argmax]
-        for a in variant_annotation[pos_snp]:
-            try:
-                annot_posterior[a] += value[pos_snp][3]*value[pos_snp][4]
-            except KeyError:
-                annot_posterior[a] = value[pos_snp][3]*value[pos_snp][4]
+        for snp in snps:
+            for a in variant_annotation[snp]:
+                try:
+                    annot_prior[a] += value[snp][2]*0.5
+                except KeyError:
+                    annot_prior[a] = value[snp][2]*0.5
+            prior_total += value[snp][2]*0.5
 
-    priortotal = np.sum(annot_prior.values())
-    annot_prior = dict([(key,val/priortotal) for key,val in annot_prior.iteritems()])
-    postotal = np.sum(annot_posterior.values())
-    annot_posterior = dict([(key,val/postotal) for key,val in annot_posterior.iteritems()])
+            for a in variant_annotation[snp]:
+                try:
+                    annot_posterior[a] += value[snp][3]*value[snp][4]
+                except KeyError:
+                    annot_posterior[a] = value[snp][3]*value[snp][4]
+            posterior_total += value[snp][3]*value[snp][4]
+
+    annot_prior = dict([(key,val/prior_total) for key,val in annot_prior.iteritems()])
+    annot_posterior = dict([(key,val/posterior_total) for key,val in annot_posterior.iteritems()])
 
     return annot_prior, annot_posterior
 
