@@ -21,7 +21,7 @@ def plot_annotation_weights(weights, stderrs, labels):
     labels = [labels[i] for i,s in enumerate(sig) if s]
 
     # order annotations
-    order = np.argsort(weights)
+    order = np.argsort(weights)[:20]
     weights = weights[order]
     stderrs = stderrs[order]
     labels = [labels[o] for o in order]
@@ -76,9 +76,7 @@ def plot_annotation_proportion(preprop, postprop, labels):
     subplot.yaxis.set_ticks([])
     subplot.xaxis.set_ticks_position('bottom')
 
-    order = np.argsort(postprop)
-    if order.size>20:
-        order = np.hstack((order[:10],order[-10:]))
+    order = np.argsort(postprop)[:20]
     preprop = preprop[order]
     postprop = postprop[order]
     labels = [labels[o] for o in order]
@@ -86,7 +84,7 @@ def plot_annotation_proportion(preprop, postprop, labels):
     N = order.size
     yvals = np.arange(1,2*N,2)
     xmin = 0
-    xmax = max([np.max(postprop), np.max(preprop)])+0.1
+    xmax = 1.1*max([np.max(postprop), np.max(preprop)])
 
     enriched = postprop>preprop
     depleted = postprop<=preprop
@@ -107,13 +105,13 @@ def plot_annotation_proportion(preprop, postprop, labels):
 
     for i,m in enumerate(enriched):
         if m:
-            plot.text(xmin-0.25, yvals[i], labels[i], fontsize=8, color='r', \
+            plot.text(xmin-0.1, yvals[i], labels[i], fontsize=8, color='r', \
                 horizontalalignment='right', verticalalignment='center')
         else:
-            plot.text(xmin-0.25, yvals[i], labels[i], fontsize=8, color='b', \
+            plot.text(xmin-0.1, yvals[i], labels[i], fontsize=8, color='b', \
                 horizontalalignment='right', verticalalignment='center')
 
-    subplot.axis([xmin-1, xmax, -1, 2*N+1])
+    subplot.axis([xmin-0.5, xmax, -1, 2*N+1])
     subplot.axvline(0, linestyle='--', color='k', linewidth=1)
 
     subplot.axes.get_yaxis().set_visible(False)
