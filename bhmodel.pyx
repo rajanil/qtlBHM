@@ -30,20 +30,18 @@ def write_log(log_handle, towrite):
 
 cdef class Datum:
 
-    def __cinit__(self, gene, associations, prior_var):
+    def __cinit__(self, str gene, dict associations, Prior prior):
 
         cdef str key
-        cdef np.ndarray[np.float64_t, ndim=1] beta, stderr
         self.name = gene
         self.snps = associations.keys()
         self.V = len(self.snps)
-        beta = np.array([associations[key][0] for key in self.snps])
-        stderr = np.array([associations[key][1] for key in self.snps])
+        self.beta = np.array([associations[key][0] for key in self.snps])
+        self.stderr = np.array([associations[key][1] for key in self.snps])
         self.logBF = np.empty((self.V,), dtype=np.float64)
-        self.compute_bayes_factors(beta, stderr, prior_var)
+        self.compute_bayes_factors(prior)
 
-    cdef compute_bayes_factors(self, np.ndarray[np.float64_t, ndim=1] beta, \
-    np.ndarray[np.float64_t, ndim=1] stderr, prior_var):
+    cdef compute_bayes_factors(self, Prior prior):
         """
         compute an approximate log Bayes Factor, as detailed
         in Wakefield 2008
@@ -52,14 +50,11 @@ cdef class Datum:
         alternative rather than null.
         """
 
-        cdef long v
-        cdef double zscore, r
+        cdef np.ndarray zscore, r
 
-        for v from 0 <= v < self.V:
-
-            zscore = beta[v]/stderr[v]
-            r = prior_var / (stderr[v]**2 + prior_var)
-            self.logBF[v] = 0.5*nplog(1-r) + 0.5*r*zscore**2
+        zscore = self.beta/self.stderr
+        r = prior.var / (self.stderr**2 + prior.var)
+        self.logBF = 0.5*nplogvec(1-r) + 0.5*r*zscore**2
 
 cdef class Posterior:
 
@@ -68,11 +63,7 @@ cdef class Posterior:
         self.gene = 0
         self.snp = np.empty((datum.V,),dtype=float)
 
-        # this flag decides whether the gene is used
-        # to optimize the annotation weights.
-        # the flag can be reset between EM steps
-
-    cdef update(self, Datum datum, Annotation annotation):
+    cdef update(self, Datum datum, Annotation annotation, Prior prior):
 
         cdef long v, idx
         cdef double snpmax, chimax, chisum, snpsum
@@ -106,7 +97,7 @@ cdef class Posterior:
             pdb.set_trace()
 
         # update gene posteriors
-        self.gene = annotation.log_prior_odds + np.sum(self.snp*(chi-nplogvec(self.snp)))
+        self.gene = prior.gene_prior_logodds + np.sum(self.snp*(chi-nplogvec(self.snp)))
         try:
             self.gene = 1./(1+exp(-1*self.gene))
         except OverflowError:
@@ -115,6 +106,109 @@ cdef class Posterior:
             print self.gene
             pdb.set_trace()
 
+cdef class Prior:
+
+    def __cinit__(self):
+
+        # prior probability that a gene has a causal QTL = 0.1
+        self.gene_prior_logodds = -1*nplog(9)
+
+        # initial variance of causal QTLs is drawn from standard
+        # inverse-gamma distribution
+        self.var = 1./np.random.gamma(1,1)
+
+    def update(self, list data, list posteriors):
+
+        #self.update_gene_prior(posteriors)
+
+        self.update_var(data, posteriors)
+
+    def update_var(self, list data, list posteriors):
+
+        x_init = np.array([self.var])
+        self.var = optimize_prior_variance(x_init, data, posteriors)
+
+    cdef update_gene_prior(self, list posteriors):
+
+        # update prior probability that a gene has a causal eQTL
+        self.gene_prior_logodds = np.sum([posterior.gene for posterior in posteriors])/len(posteriors)
+        self.gene_prior_logodds = nplog(self.gene_prior_logodds/(1-self.gene_prior_logodds))
+
+def optimize_prior_variance(x_init, data, posteriors):
+
+    # function that computes likelihood, gradient and hessian
+    def F(x=None, z=None):
+
+        if x is None:
+            return 0, cvx.matrix(x_init)
+
+        xx = np.array(x).ravel().astype(np.float64)
+
+        if z is None:
+            results = compute_func_grad_priorvar(xx, data, posteriors)
+            f = results[0]
+            Df = results[1]
+            return cvx.matrix(f), cvx.matrix(Df)
+        else:
+            results = compute_func_grad_hess_priorvar(xx, data, posteriors)
+            f = results[0]
+            Df = results[1]
+            Hf = z[0]*results[2]
+            return cvx.matrix(f), cvx.matrix(Df), cvx.matrix(Hf)
+
+    G = cvx.matrix(np.array([[-1.]]))
+    h = cvx.matrix(np.array([[0.]]))
+    try:
+        solution = solvers.cp(F, G=G, h=h)
+        x_final = np.array(solution['x'])[0]
+    except ValueError:
+        x_final = x_init[0]
+    return x_final
+
+cdef tuple compute_func_grad_priorvar(np.ndarray[np.float64_t, ndim=1] xx, list data, list posteriors):
+
+    cdef double f
+    cdef np.ndarray[np.float64_t, ndim=2] df
+    cdef Posterior posterior
+    cdef Datum datum
+
+    f = 0.
+    df = np.zeros((1,1), dtype='float')
+
+    for datum,posterior in zip(data,posteriors):
+
+        f = f + posterior.gene * np.sum(posterior.snp * \
+            (2*nplogvec(datum.stderr) - nplogvec(xx+datum.stderr**2) + xx/(xx+datum.stderr**2) * (datum.beta/datum.stderr)**2))
+
+        df[0,0] = df[0,0] + posterior.gene * np.sum(posterior.snp * \
+                ((datum.beta**2 - datum.stderr**2 - xx)/(xx + datum.stderr**2)**2))
+
+    return -1*f, -1*df
+
+cdef tuple compute_func_grad_hess_priorvar(np.ndarray[np.float64_t, ndim=1] xx, list data, list posteriors):
+
+    cdef double f
+    cdef np.ndarray[np.float64_t, ndim=2] df, hess
+    cdef Posterior posterior
+    cdef Datum datum
+
+    f = 0.
+    df = np.zeros((1,1), dtype='float')
+    hess = np.zeros((1,1), dtype='float')
+
+    for datum,posterior in zip(data,posteriors):
+
+        f = f + posterior.gene * np.sum(posterior.snp * \
+            (2*nplogvec(datum.stderr) - nplogvec(xx+datum.stderr**2) + xx/(xx+datum.stderr**2) * (datum.beta/datum.stderr)**2))
+
+        df[0,0] = df[0,0] + posterior.gene * np.sum(posterior.snp * \
+                  ((datum.beta**2 - datum.stderr**2 - xx)/(xx + datum.stderr**2)**2))
+
+        hess[0,0] = hess[0,0] + posterior.gene * np.sum(posterior.snp * \
+                    (xx + datum.stderr**2 - 2*datum.beta**2)/(xx + datum.stderr**2)**3)
+
+    return -1*f, -1*df, -1*hess
+
 cdef class Annotation:
 
     def __cinit__(self, dict annot_values):
@@ -122,9 +216,6 @@ cdef class Annotation:
         cdef long i
         cdef str snp, label, v
         cdef list val, annot_labels
-
-        self.log_prior_odds = 0.005 + 0.01*random.random()
-        self.log_prior_odds = nplog(self.log_prior_odds/(1-self.log_prior_odds))
 
         # only select annotations that cover a minimum number of variants (100)
         all_labels = [v for val in annot_values.values() for v in val]
@@ -144,13 +235,13 @@ cdef class Annotation:
 
     def update(self, list data, list posteriors):
 
-        # run solver
+        # run solver to update annotation weights
         x_init = self.weights.reshape(self.N,1)
         self.weights = optimize_annotation_weights(x_init, data, self.annotvalues, posteriors)
 
     def compute_stderr(self, list data, list posteriors):
 
-        results = compute_func_grad_hess(self.weights, data, self.annotvalues, posteriors)
+        results = compute_func_grad_hess_weights(self.weights, data, self.annotvalues, posteriors)
         self.stderr = np.sqrt(np.diag(np.linalg.inv(results[2])))
 
 
@@ -165,12 +256,12 @@ def optimize_annotation_weights(x_init, data, annotvalues, posteriors):
         xx = np.array(x).ravel().astype(np.float64)
 
         if z is None:
-            results = compute_func_grad(xx, data, annotvalues, posteriors)
+            results = compute_func_grad_weights(xx, data, annotvalues, posteriors)
             f = results[0]
             Df = results[1]
             return cvx.matrix(f), cvx.matrix(Df)
         else:
-            results = compute_func_grad_hess(xx, data, annotvalues, posteriors)
+            results = compute_func_grad_hess_weights(xx, data, annotvalues, posteriors)
             f = results[0]
             Df = results[1]
             Hf = z[0]*results[2]
@@ -180,7 +271,7 @@ def optimize_annotation_weights(x_init, data, annotvalues, posteriors):
     x_final = np.array(solution['x']).ravel()
     return x_final
 
-cdef tuple compute_func_grad(np.ndarray[np.float64_t, ndim=1] xx, list data, dict annotvalues, list posteriors):
+cdef tuple compute_func_grad_weights(np.ndarray[np.float64_t, ndim=1] xx, list data, dict annotvalues, list posteriors):
 
     cdef long a, v, V, index
     cdef double f, chimax, chisum, total, u
@@ -227,7 +318,7 @@ cdef tuple compute_func_grad(np.ndarray[np.float64_t, ndim=1] xx, list data, dic
 
     return -1*f, -1*df.reshape(1,V)
 
-cdef tuple compute_func_grad_hess(np.ndarray[np.float64_t, ndim=1] xx, list data, dict annotvalues, list posteriors):
+cdef tuple compute_func_grad_hess_weights(np.ndarray[np.float64_t, ndim=1] xx, list data, dict annotvalues, list posteriors):
 
     cdef long a, b, v, V, aidx, bidx, I, J, i, j, index
     cdef double f, chimax, chisum, total, u, w
@@ -296,11 +387,11 @@ cdef tuple compute_func_grad_hess(np.ndarray[np.float64_t, ndim=1] xx, list data
 
     return -1*f, -1*df.reshape(1,V), hess
                 
-cdef double likelihood(list data, list posteriors, Annotation annotation):
+cdef double likelihood(list data, list posteriors, Annotation annotation, Prior prior):
 
     cdef v
     cdef int N
-    cdef double L, prior, chisum, temp
+    cdef double L, chisum, temp
     cdef np.ndarray chi
     cdef Datum datum
     cdef Posterior posterior
@@ -332,28 +423,30 @@ cdef double likelihood(list data, list posteriors, Annotation annotation):
             except ValueError:
                 pass
 
-        L = L + posterior.gene * (temp + annotation.log_prior_odds)
-        try:
-            L = L - posterior.gene*nplog(posterior.gene) - (1-posterior.gene)*nplog(1-posterior.gene)
-        except ValueError:
-            pass
+        L = L + posterior.gene * (temp + prior.gene_prior_logodds)
+        L = L - posterior.gene*nplog(posterior.gene) - (1-posterior.gene)*nplog(1-posterior.gene)
 
     return L/N
 
-def learn_and_infer(dataQTL, snp_annotation, prior_var, log_handle, reltol):
+def learn_and_infer(dataQTL, snp_annotation, log_handle, reltol):
 
     cdef list data, posteriors
     cdef Annotation annotation
     cdef Datum datum
+    cdef Prior prior
     cdef Posterior posterior
 
-    # initialize data and variables
-    data = [Datum(key,value,prior_var) for key,value in dataQTL.iteritems()]
+    # initialize variables and prior
+    prior = Prior()
     annotation = Annotation(snp_annotation)
+
+    # initialize data
+    data = [Datum(key,value,prior) for key,value in dataQTL.iteritems()]
+
+    # initialize latent variables and likelihood
     posteriors = [Posterior(datum) for datum in data]
-    for datum,posterior in zip(data,posteriors):
-        posterior.update(datum, annotation)
-    L = likelihood(data, posteriors, annotation)
+    [posterior.update(datum, annotation, prior) for datum,posterior in zip(data,posteriors)]
+    L = likelihood(data, posteriors, annotation, prior)
     write_log(log_handle, "%s\t%d genes; %d variants; %d annotations"%(time(),len(data),len(annotation.annotvalues),annotation.N))
     write_log(log_handle, "%s\tInitial likelihood = %.6e"%(time(), L))
     dL = np.inf
@@ -361,19 +454,22 @@ def learn_and_infer(dataQTL, snp_annotation, prior_var, log_handle, reltol):
     # infer causal variants
     while np.abs(dL)>reltol:
 
-        # update posterior
-        for datum,posterior in zip(data,posteriors):
-            posterior.update(datum, annotation)
-
-        # update parameters
+        # update annotation parameters 
         annotation.update(data, posteriors)
 
+        # update prior
+        prior.update(data, posteriors)
+
+        # update Bayes Factors and posterior
+        [datum.compute_bayes_factors(prior) for datum in data]
+        [posterior.update(datum, annotation, prior) for datum,posterior in zip(data,posteriors)]
+
         # compute likelihood
-        newL = likelihood(data, posteriors, annotation)
+        newL = likelihood(data, posteriors, annotation, prior)
 
         dL = (newL-L)/np.abs(L)
         L = newL
         write_log(log_handle, "%s\tLikelihood = %.6e; Relative change = %.6e"%(time(),L,dL))
 
     annotation.compute_stderr(data, posteriors)
-    return data, posteriors, annotation
+    return data, posteriors, annotation, prior

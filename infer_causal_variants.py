@@ -65,9 +65,9 @@ def compute_posterior_enrichment(test_statistics, variant_annotation):
         for snp in snps:
             for a in variant_annotation[snp]:
                 try:
-                    annot_prior[a] += value[snp][2]*0.5
+                    annot_prior[a] += value[snp][2]*0.1
                 except KeyError:
-                    annot_prior[a] = value[snp][2]*0.5
+                    annot_prior[a] = value[snp][2]*0.1
             prior_total += value[snp][2]*0.5
 
             for a in variant_annotation[snp]:
@@ -98,7 +98,8 @@ if __name__=="__main__":
     bhmodel.write_log(log_handle, "%s\tpreprocessed data."%bhmodel.time())
 
     # learn model
-    data, posteriors, annotation = bhmodel.learn_and_infer(test_statistics, variant_annotations, options.prior_var, log_handle, options.mintol)
+    data, posteriors, annotation, prior = bhmodel.learn_and_infer(test_statistics, variant_annotations, log_handle, options.mintol)
+    bhmodel.write_log(log_handle, "%s\toptimal variance of causal QTLs = %.6f"%(bhmodel.time(),prior.var))
 
     # output locus QTL posterior
     locus_posterior_file = '%s_locus_posterior.txt.gz'%options.output_prefix

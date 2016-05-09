@@ -8,16 +8,23 @@ cdef class Datum:
     cdef public long V
     cdef public str name
     cdef public list snps
-    cdef public np.ndarray logBF
+    cdef public np.ndarray beta, stderr, logBF
 
-    cdef compute_bayes_factors(self, np.ndarray[np.float64_t, ndim=1] beta, np.ndarray[np.float64_t, ndim=1] stderr, prior_var)
+    cdef compute_bayes_factors(self, Prior prior)
 
 cdef class Posterior:
 
     cdef public double gene
     cdef public np.ndarray snp
 
-    cdef update(self, Datum datum, Annotation annotation)
+    cdef update(self, Datum datum, Annotation annotation, Prior prior)
+
+cdef class Prior:
+
+    cdef public double var
+    cdef public double gene_prior_logodds
+
+    cdef update_gene_prior(self, list posteriors)
 
 cdef class Annotation:
 
@@ -28,11 +35,15 @@ cdef class Annotation:
     cdef public dict annot_labels
     cdef public dict annotvalues
 
-cdef tuple compute_func_grad(np.ndarray[np.float64_t, ndim=1] xx, list data, dict annotvalues, list posteriors)
+cdef tuple compute_func_grad_weights(np.ndarray[np.float64_t, ndim=1] xx, list data, dict annotvalues, list posteriors)
 
-cdef tuple compute_func_grad_hess(np.ndarray[np.float64_t, ndim=1] xx, list data, dict annotvalues, list posteriors)
+cdef tuple compute_func_grad_hess_weights(np.ndarray[np.float64_t, ndim=1] xx, list data, dict annotvalues, list posteriors)
 
-cdef public double likelihood(list data, list posterior, Annotation annotation)
+cdef tuple compute_func_grad_priorvar(np.ndarray[np.float64_t, ndim=1] xx, list data, list posteriors)
+
+cdef tuple compute_func_grad_hess_priorvar(np.ndarray[np.float64_t, ndim=1] xx, list data, list posteriors)
+
+cdef public double likelihood(list data, list posterior, Annotation annotation, Prior prior)
 
 cdef public double nplog(double x)
 
