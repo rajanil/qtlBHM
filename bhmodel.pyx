@@ -12,6 +12,22 @@ solvers.options['show_progress'] = False
 
 time = lambda: datetime.datetime.strftime(datetime.datetime.now(), '%Y-%m-%d %H:%M:%S')
 
+cdef double EPS = np.finfo(np.double).tiny
+
+cdef np.ndarray nplogvec(np.ndarray x):
+
+    x[x<EPS] = EPS
+    return np.log(x)
+
+cdef double nplog(double x):
+
+    return np.log(max([x,EPS]))
+
+def write_log(log_handle, towrite):
+
+    log_handle.write(towrite+'\n')
+    print towrite
+
 cdef class Datum:
 
     def __cinit__(self, gene, associations, prior_var):
@@ -43,14 +59,18 @@ cdef class Datum:
 
             zscore = beta[v]/stderr[v]
             r = prior_var / (stderr[v]**2 + prior_var)
-            self.logBF[v] = 0.5*log(1-r) + 0.5*r*zscore**2
+            self.logBF[v] = 0.5*nplog(1-r) + 0.5*r*zscore**2
 
 cdef class Posterior:
 
     def __cinit__(self, Datum datum):
 
-        self.gene = 0.1*random.random()
+        self.gene = 0
         self.snp = np.empty((datum.V,),dtype=float)
+
+        # this flag decides whether the gene is used
+        # to optimize the annotation weights.
+        # the flag can be reset between EM steps
 
     cdef update(self, Datum datum, Annotation annotation):
 
@@ -73,7 +93,7 @@ cdef class Posterior:
 
         snpmax = -np.inf
         for v from 0 <= v < datum.V:
-            chi[v] = datum.logBF[v] + chi[v] - log(chisum)
+            chi[v] = datum.logBF[v] + chi[v] - nplog(chisum)
             snpmax = max([snpmax, chi[v]])
 
         snpsum = 0
@@ -86,7 +106,7 @@ cdef class Posterior:
             pdb.set_trace()
 
         # update gene posteriors
-        self.gene = annotation.log_prior_odds + np.sum(self.snp*(chi-np.nan_to_num(np.log(self.snp))))
+        self.gene = annotation.log_prior_odds + np.sum(self.snp*(chi-nplogvec(self.snp)))
         try:
             self.gene = 1./(1+exp(-1*self.gene))
         except OverflowError:
@@ -103,13 +123,12 @@ cdef class Annotation:
         cdef str snp, label, v
         cdef list val, annot_labels
 
-        self.log_prior_odds = random.random()
-        self.log_prior_odds = log(self.log_prior_odds/(1-self.log_prior_odds))
+        self.log_prior_odds = 0.005 + 0.01*random.random()
+        self.log_prior_odds = nplog(self.log_prior_odds/(1-self.log_prior_odds))
 
         # only select annotations that cover a minimum number of variants (100)
         all_labels = [v for val in annot_values.values() for v in val]
-        uniq_labels = list(set(all_labels))
-        annot_labels = [label for label in uniq_labels if np.sum([l==label for l in all_labels])>=100]
+        annot_labels = list(set(all_labels))
         annot_labels.sort()
 
         self.N = len(annot_labels)
@@ -163,7 +182,7 @@ def optimize_annotation_weights(x_init, data, annotvalues, posteriors):
 
 cdef tuple compute_func_grad(np.ndarray[np.float64_t, ndim=1] xx, list data, dict annotvalues, list posteriors):
 
-    cdef long a, v, V
+    cdef long a, v, V, index
     cdef double f, chimax, chisum, total, u
     cdef dict expect
     cdef np.ndarray[np.float64_t, ndim=1] df, chi
@@ -173,6 +192,7 @@ cdef tuple compute_func_grad(np.ndarray[np.float64_t, ndim=1] xx, list data, dic
     V = xx.size
     f = 0.
     df = np.zeros((V,), dtype='float')
+
     for datum,posterior in zip(data,posteriors):
 
         # update SNP posteriors
@@ -192,7 +212,7 @@ cdef tuple compute_func_grad(np.ndarray[np.float64_t, ndim=1] xx, list data, dic
             chisum = chisum + chi[v]
         chi = chi/chisum
 
-        f = f + posterior.gene * (total - log(chisum) - chimax)
+        f = f + posterior.gene * (total - nplog(chisum) - chimax)
         for v from 0 <= v < datum.V:
             u = posterior.gene * posterior.snp[v]
             for a in annotvalues[datum.snps[v]]:
@@ -209,7 +229,7 @@ cdef tuple compute_func_grad(np.ndarray[np.float64_t, ndim=1] xx, list data, dic
 
 cdef tuple compute_func_grad_hess(np.ndarray[np.float64_t, ndim=1] xx, list data, dict annotvalues, list posteriors):
 
-    cdef long a, b, v, V, aidx, bidx, I, J, i, j
+    cdef long a, b, v, V, aidx, bidx, I, J, i, j, index
     cdef double f, chimax, chisum, total, u, w
     cdef list keys, annotval
     cdef dict expect
@@ -219,9 +239,11 @@ cdef tuple compute_func_grad_hess(np.ndarray[np.float64_t, ndim=1] xx, list data
     cdef Datum datum
 
     V = xx.size
+    J = len(posteriors)
     f = 0.
     df = np.zeros((V,), dtype='float')
-    hess = 0.01*np.eye(V)
+    hess = 1./J*np.eye(V)
+
     for datum,posterior in zip(data,posteriors):
 
         # update SNP posteriors
@@ -240,7 +262,7 @@ cdef tuple compute_func_grad_hess(np.ndarray[np.float64_t, ndim=1] xx, list data
             chisum = chisum + chi[v]
         chi = chi/chisum
 
-        f = f + posterior.gene * (total - log(chisum) - chimax)
+        f = f + posterior.gene * (total - nplog(chisum) - chimax)
         expect = dict()
         for v from 0 <= v < datum.V:
             u = posterior.gene * posterior.snp[v]
@@ -277,12 +299,14 @@ cdef tuple compute_func_grad_hess(np.ndarray[np.float64_t, ndim=1] xx, list data
 cdef double likelihood(list data, list posteriors, Annotation annotation):
 
     cdef v
+    cdef int N
     cdef double L, prior, chisum, temp
     cdef np.ndarray chi
     cdef Datum datum
     cdef Posterior posterior
 
     L = 0.
+    N = len(data)
     for datum,posterior in zip(data,posteriors):
 
         # update SNP posteriors
@@ -298,25 +322,25 @@ cdef double likelihood(list data, list posteriors, Annotation annotation):
             chi[v] = exp(chi[v]-chimax)
             chisum = chisum + chi[v]
 
-        chisum = log(chisum)
+        chisum = nplog(chisum)
         temp = 0
         for v from 0 <= v < datum.V:
-            chi[v] = datum.logBF[v] + log(chi[v]) - chisum
+            chi[v] = datum.logBF[v] + nplog(chi[v]) - chisum
             temp = temp + posterior.snp[v] * chi[v]
             try:
-                temp = temp - posterior.snp[v]*log(posterior.snp[v])
+                temp = temp - posterior.snp[v]*nplog(posterior.snp[v])
             except ValueError:
                 pass
 
         L = L + posterior.gene * (temp + annotation.log_prior_odds)
         try:
-            L = L - posterior.gene*log(posterior.gene) - (1-posterior.gene)*log(1-posterior.gene)
+            L = L - posterior.gene*nplog(posterior.gene) - (1-posterior.gene)*nplog(1-posterior.gene)
         except ValueError:
             pass
 
-    return L
+    return L/N
 
-def learn_and_infer(dataQTL, snp_annotation, prior_var, reltol):
+def learn_and_infer(dataQTL, snp_annotation, prior_var, log_handle, reltol):
 
     cdef list data, posteriors
     cdef Annotation annotation
@@ -330,8 +354,8 @@ def learn_and_infer(dataQTL, snp_annotation, prior_var, reltol):
     for datum,posterior in zip(data,posteriors):
         posterior.update(datum, annotation)
     L = likelihood(data, posteriors, annotation)
-    print "%s\t%d genes; %d variants; %d annotations"%(time(),len(data),len(annotation.annotvalues),annotation.N)
-    print "%s\tInitial likelihood = %.6e"%(time(), L)
+    write_log(log_handle, "%s\t%d genes; %d variants; %d annotations"%(time(),len(data),len(annotation.annotvalues),annotation.N))
+    write_log(log_handle, "%s\tInitial likelihood = %.6e"%(time(), L))
     dL = np.inf
 
     # infer causal variants
@@ -349,7 +373,7 @@ def learn_and_infer(dataQTL, snp_annotation, prior_var, reltol):
 
         dL = (newL-L)/np.abs(L)
         L = newL
-        print "%s\tLikelihood = %.6e; Relative change = %.6e"%(time(),L,dL)
+        write_log(log_handle, "%s\tLikelihood = %.6e; Relative change = %.6e"%(time(),L,dL))
 
     annotation.compute_stderr(data, posteriors)
     return data, posteriors, annotation

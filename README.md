@@ -121,9 +121,10 @@ In the above formats, positions can be 0-based or 1-based, as long as they are t
 
 Learning and inference can be performed by passing the following arguments (using test data as examples).
 
-    python infer_causal_variants.py --output_prefix test/results test/statistics.txt.gz test/annotations.bed.gz
+    python infer_causal_variants.py --output_prefix test/results test/statistics.txt.gz test/annotation.bed.gz
 
-This run will output three files: 
+This run will output four files: 
   1. `test/results_locus_posterior.txt.gz` -- this file lists the probability that each tested locus is a QTL
   2. `test/results_variant_posterior.txt.gz` -- this file lists the probability that each variant is the causal variant for a specific locus.A probability is computed with and without prior weighting of variants using annotations.
   3. `test/results_annotations.txt` -- this file lists the weights and standard errors for each annotation, and the posterior enrichment for each annotation. A posterior enrichment is computed with and without prior weighting of variants using annotations.
+  4. `test/results.log` -- this file logs the runtime output, in particular the log-likelihood of the parameters, the change in log-likelihood, and the time taken for each iteration.

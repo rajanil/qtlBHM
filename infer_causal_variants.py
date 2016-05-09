@@ -22,8 +22,8 @@ def parse_args():
 
     parser.add_argument("--mintol",
                         type=float,
-                        default=1e-6,
-                        help="convergence criterion for change in per-locus marginal likelihood (default: 1e-6)")
+                        default=1e-4,
+                        help="convergence criterion for relative change in per-locus marginal likelihood (default: 1e-4)")
 
     parser.add_argument("--prior_var",
                         type=float,
@@ -34,11 +34,6 @@ def parse_args():
                         type=str,
                         default=None,
                         help="file to store the model parameters and per-variant and per-locus posteriors")
-
-    parser.add_argument("--log_file",
-                        type=str,
-                        default=None,
-                        help="file to store some statistics of the optimization algorithm")
 
     parser.add_argument("test_stat_file",
                         action="store",
@@ -91,16 +86,19 @@ if __name__=="__main__":
 
     options = parse_args()
 
+    log_file = options.output_prefix+'.log'
+    log_handle = open(log_file,'w')
+
     # load data
     test_statistics = preprocess.load_test_statistics(options.test_stat_file)
-    print "%s\tloaded test statistics from %s"%(bhmodel.time(), options.test_stat_file)
+    bhmodel.write_log(log_handle, "%s\tloaded test statistics from %s"%(bhmodel.time(), options.test_stat_file))
     genomic_annotations = preprocess.load_genomic_annotations(options.annot_files)
-    print "%s\tloaded genomic annotations from %s"%(bhmodel.time(), ",".join(options.annot_files))
+    bhmodel.write_log(log_handle, "%s\tloaded genomic annotations from %s"%(bhmodel.time(), ",".join(options.annot_files)))
     variant_annotations = preprocess.match_annotations_to_variants(test_statistics, genomic_annotations)
-    print "%s\tpreprocessed data."%bhmodel.time()
+    bhmodel.write_log(log_handle, "%s\tpreprocessed data."%bhmodel.time())
 
     # learn model
-    data, posteriors, annotation = bhmodel.learn_and_infer(test_statistics, variant_annotations, options.prior_var, options.mintol)
+    data, posteriors, annotation = bhmodel.learn_and_infer(test_statistics, variant_annotations, options.prior_var, log_handle, options.mintol)
 
     # output locus QTL posterior
     locus_posterior_file = '%s_locus_posterior.txt.gz'%options.output_prefix
@@ -109,7 +107,7 @@ if __name__=="__main__":
     for datum,posterior in zip(data,posteriors):
         handle.write("%s\t%.8f\n"%(datum.name,posterior.gene))
     handle.close()
-    print "%s\toutput locus-level posteriors."%bhmodel.time()
+    bhmodel.write_log(log_handle, "%s\toutput locus-level posteriors."%bhmodel.time())
 
     # output variant posterior of being the causal variant
     # with and without annotation information
@@ -123,11 +121,11 @@ if __name__=="__main__":
             handle.write("%s\t%s\t%.8f\t%.8f\n"%(datum.name, snp, pri, pos))
             test_statistics[datum.name][snp] = np.hstack((test_statistics[datum.name][snp], [pri, pos, posterior.gene]))
     handle.close()
-    print "%s\toutput variant-level posteriors."%bhmodel.time()
+    bhmodel.write_log(log_handle, "%s\toutput variant-level posteriors."%bhmodel.time())
 
     # compute posterior enrichment
     annot_prior, annot_posterior = compute_posterior_enrichment(test_statistics, variant_annotations)
-    print "%s\tcomputed posterior enrichment within annotations."%bhmodel.time()
+    bhmodel.write_log(log_handle, "%s\tcomputed posterior enrichment within annotations."%bhmodel.time())
 
     # output annotation weights and standard errors,
     # along with their posterior enrichments
@@ -145,5 +143,8 @@ if __name__=="__main__":
             posterior = 0
         handle.write("%s\t%.8f\t%.8f\t%.8f\t%.8f\n"%(label,weight,stderr,prior,posterior))
     handle.close()
-    print "%s\toutput posterior enrichment within annotations."%bhmodel.time()
-    print "%s\tfinished successfully."%bhmodel.time()
+
+    bhmodel.write_log(log_handle, "%s\toutput posterior enrichment within annotations."%bhmodel.time())
+    bhmodel.write_log(log_handle, "%s\tfinished successfully."%bhmodel.time())
+
+    log_handle.close()

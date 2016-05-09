@@ -33,3 +33,7 @@ cdef tuple compute_func_grad(np.ndarray[np.float64_t, ndim=1] xx, list data, dic
 cdef tuple compute_func_grad_hess(np.ndarray[np.float64_t, ndim=1] xx, list data, dict annotvalues, list posteriors)
 
 cdef public double likelihood(list data, list posterior, Annotation annotation)
+
+cdef public double nplog(double x)
+
+cdef public np.ndarray nplogvec(np.ndarray x)

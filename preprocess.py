@@ -85,11 +85,13 @@ def match_annotations_to_variants(test_statistics, genomic_annotations):
     for label,values in genomic_annotations.iteritems():
         for chrom in values.keys():
             try:
-                mask = np.array([np.any(np.logical_and(position>=values[chrom][:,0],position<values[chrom][:,1])) 
-                                 for position in variants[chrom]])
-                vars = ['%s.%d'%(chrom,pos) for pos in variants[chrom][mask]]
-                ig = [variant_annotations[var].append(label) for var in vars]
+                variants[chrom]
             except KeyError:
-                pass
+                continue
+            chrmax = max([values[chrom].max(), variants[chrom].max()])+1
+            mask = np.zeros((chrmax,), dtype='bool')
+            [mask.__setslice__(val[0], val[1], True) for val in values[chrom]]
+            vars = ['%s.%d'%(chrom,pos) for pos in variants[chrom][mask[variants[chrom]]]]
+            ig = [variant_annotations[var].append(label) for var in vars]
 
     return variant_annotations
